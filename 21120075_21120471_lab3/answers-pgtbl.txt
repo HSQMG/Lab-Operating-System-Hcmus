@@ -1,0 +1,3 @@
+Câu 1: Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+---> Bất kỳ system call nào trực tiếp hoặc gián tiếp gọi hàm copyout đều có thể được speedup.
+Bởi vì nó giúp tiết kiệm thời gian trong quá trình sao chép dữ liệu. 

@@ -1,0 +1,298 @@
+diff --git a/Makefile b/Makefile
+index 365c91b..c5697b0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -188,7 +188,11 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
+-
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_primes\
++	$U/_find\
++	$U/_xargs\
+ 
+ 
+ 
+diff --git a/time.txt b/time.txt
+new file mode 100644
+index 0000000..3cacc0b
+--- /dev/null
++++ b/time.txt
+@@ -0,0 +1 @@
++12
+\ No newline at end of file
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..e92b867
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,72 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++void find(char *path, char *target) {
++    char buf[512];
++    char *p;
++    int fd;
++    struct dirent de;
++    struct stat st;
++
++    if ((fd = open(path, 0)) < 0) {
++        fprintf(2, "find: cannot open %s\n", path);
++        return;
++    }
++
++    if (fstat(fd, &st) < 0) {
++        fprintf(2, "find: cannot stat %s\n", path);
++        close(fd);
++        return;
++    }
++
++    switch (st.type) {
++        case T_FILE:
++            if (strcmp(path, target) == 0) {
++                printf("%s\n", path);
++            }
++            break;
++
++        case T_DIR:
++            if (strlen(path) + 1 + DIRSIZ + 1 > sizeof buf) {
++                fprintf(2, "find: path too long\n");
++                break;
++            }
++            strcpy(buf, path);
++            p = buf + strlen(buf);
++            *p++ = '/';
++
++            while (read(fd, &de, sizeof(de)) == sizeof(de)) {
++                if (de.inum == 0)
++                    continue;
++
++                memmove(p, de.name, DIRSIZ);
++                p[DIRSIZ] = 0;
++
++                if (stat(buf, &st) < 0) {
++                    fprintf(2, "find: cannot stat %s\n", buf);
++                    continue;
++                }
++
++                if (st.type == T_DIR && strcmp(de.name, ".") != 0 && strcmp(de.name, "..") != 0) {
++                    find(buf, target);
++                }
++
++                if (st.type == T_FILE && strcmp(de.name, target) == 0) {
++                    printf("%s\n", buf);
++                }
++            }
++            break;
++    }
++    close(fd);
++}
++
++int main(int argc, char *argv[]) {
++    if (argc != 3) {
++        fprintf(2, "Usage: find <path> <filename>\n");
++        exit(1);
++    }
++    find(argv[1], argv[2]);
++    exit(0);
++}
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..2e78211
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,43 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++int
++main() {
++  int p2c[2]; 
++  int c2p[2];
++
++  pipe(p2c);
++  pipe(c2p);
++  
++  int pid = fork();
++
++  if(pid == 0) { // child
++    
++    close(p2c[1]); 
++    close(c2p[0]);
++
++    char buf[100];
++    
++    read(p2c[0], buf, sizeof(buf));
++    printf("%d: received ping\n", getpid());
++
++    write(c2p[1], "pong", strlen("pong"));
++
++    exit(0);
++
++  } else { // parent
++
++    close(p2c[0]);
++    close(c2p[1]);
++
++    write(p2c[1], "ping", strlen("ping"));
++    
++    char buf[100];
++    read(c2p[0], buf, sizeof(buf));
++    printf("%d: received %s\n", getpid(), buf);
++
++    exit(0);
++  }
++}
++    
+diff --git a/user/primes.c b/user/primes.c
+new file mode 100644
+index 0000000..c868412
+--- /dev/null
++++ b/user/primes.c
+@@ -0,0 +1,63 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++#define N 35
++
++void sieve(int p);
++
++int main() {
++    int primes_pipe[2];
++    pipe(primes_pipe);
++    int p;
++
++    if (fork() == 0) {
++        close(primes_pipe[1]);
++        sieve(primes_pipe[0]);
++    } else {
++        close(primes_pipe[0]);
++        for (p = 2; p <= N; p++) {
++            write(primes_pipe[1], &p, sizeof(p));
++        }
++        close(primes_pipe[1]);
++        wait(0);
++    }
++
++    exit(0);
++}
++
++void sieve(int p) {
++    int num;
++    if (read(p, &num, sizeof(num)) <= 0) {
++        close(p);
++        exit(0);
++    }
++
++    printf("prime %d\n", num);
++
++    int next_pipe[2];
++    pipe(next_pipe);
++
++    if (fork() == 0) {
++        close(next_pipe[1]);
++        close(p);
++        sieve(next_pipe[0]);
++    } else {
++        close(next_pipe[0]);
++    }
++
++    while (1) {
++        int n;
++        if (read(p, &n, sizeof(n)) <= 0) {
++            close(p);
++            break;
++        }
++        if (n % num != 0) {
++            write(next_pipe[1], &n, sizeof(n));
++        }
++    }
++
++    close(next_pipe[1]);
++    wait(0);
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..8fb2b2e
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,12 @@
++#include "kernel/types.h"
++#include "user/user.h"
++
++int main(int argc, char *argv[]) {
++    if (argc != 2) {
++        printf("Usage: sleep <ticks>\n");
++        exit(1);
++    }
++    int ticks = atoi(argv[1]);
++    sleep(ticks);
++    exit(0);
++}
+diff --git a/user/xargs.c b/user/xargs.c
+new file mode 100644
+index 0000000..4af84a6
+--- /dev/null
++++ b/user/xargs.c
+@@ -0,0 +1,52 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++#define MAX_ARGV 32
++
++int main(int argc, char *argv[]) {
++  char line[512];
++  char *cmd[MAX_ARGV];
++  int cmd_argc = 0;
++  int pid, status;
++  
++  if (argc < 2) {
++    fprintf(2, "Usage: xargs command [args...]\n");
++    exit(1);
++  }
++  for (int i = 1; i < argc; i++) {
++    cmd[cmd_argc++] = argv[i];
++  }
++
++  while (1) {
++    int i = 0;
++    char c;
++    int read_success = 0;
++    while (read(0, &c, 1) > 0) {
++      if (c == '\n') {
++        line[i] = '\0';
++        read_success = 1;
++        break;
++      }
++      line[i++] = c;
++    }
++
++    if (!read_success) {
++      break;
++    }
++    if ((pid = fork()) == 0) {
++      cmd[cmd_argc] = line;
++      cmd[cmd_argc + 1] = 0;
++      exec(cmd[0], cmd);
++      fprintf(2, "xargs: exec %s failed\n", cmd[0]);
++      exit(1);
++    } else if (pid < 0) {
++      fprintf(2, "xargs: fork failed\n");
++    }
++    if (wait(&status) < 0) {
++      fprintf(2, "xargs: wait failed\n");
++    }
++  }
++
++  exit(0);
++}

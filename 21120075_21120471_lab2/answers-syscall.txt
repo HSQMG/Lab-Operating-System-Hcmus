@@ -1,0 +1,16 @@
+q1 : syscall được gọi bởi hàm usertrap() trong kernel/trap.c
+
+q2 : giá trị của p->trapframe->a7 là 7. Số 7 chính là system call number, tương ứng với SYS_exec
+
+q3 : mode cpu trước đó là user mode, bởi spp bit là 0 (0x22 -> 100010)
+
+q4 : num = * (int *) 0;
+    80002052:	00002683          	lw	a3,0(zero) # 0 <_entry-0x80000000>
+
+     register a3 corresponds to num
+
+q5 : giá trị scause : 13 -> cho biết lỗi xảy ra là "load page fault" (chương trình cố gắng truy cập dữ liệu từ một địa chỉ bộ nhớ không hợp lệ), cụ thể là xảy ra lỗi khi tải dữ liệu từ địa chỉ bằng 0 vào thanh ghi a3. Nhưng địa chỉ 0 không hợp lệ trong kernel space (kernel space bắt đầu từ địa chỉ 0x80000000)
+p $scause -> $1 = 13
+
+q6 : name binary : initcode, pid=1
+
